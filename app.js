@@ -28,18 +28,20 @@ function addImages(files) {
     files.forEach(file => {
         // Проверка типа файла
         // На Android file.type может быть пустым, поэтому проверяем расширение в первую очередь
-        const fileExtension = file.name.toLowerCase().split('.').pop();
+        const fileName = file.name || '';
+        const fileExtension = fileName.toLowerCase().split('.').pop();
         const validExtensions = ['jpg', 'jpeg', 'png', 'heic', 'heif'];
-        const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif'];
+        const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif', 'image/x-png'];
         
         // Проверяем расширение файла (более надежно на Android)
-        const isValidExtension = validExtensions.includes(fileExtension);
+        const isValidExtension = fileExtension && validExtensions.includes(fileExtension);
         // Проверяем MIME тип (может быть пустым на Android)
-        const isValidMimeType = file.type && validMimeTypes.includes(file.type.toLowerCase());
+        const fileType = (file.type || '').toLowerCase();
+        const isValidMimeType = fileType && validMimeTypes.includes(fileType);
         
         // Файл валиден если есть валидное расширение ИЛИ валидный MIME тип
         if (!isValidExtension && !isValidMimeType) {
-            showError(`Файл ${file.name} не поддерживается. Поддерживаются: JPEG, PNG, HEIF/HEIC`);
+            showError(`Файл ${file.name} не поддерживается. Поддерживаются: JPEG (.jpg, .jpeg), PNG (.png), HEIF/HEIC (.heic, .heif)`);
             return;
         }
 
@@ -193,22 +195,28 @@ async function getImageDate(file) {
 function loadImageToCanvas(blob) {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        const url = URL.createObjectURL(blob);
+        let url = null;
+        let timeout = null;
+        let reader = null;
         
-        // Таймаут для Android (на случай зависания)
-        const timeout = setTimeout(() => {
-            URL.revokeObjectURL(url);
-            reject(new Error('Таймаут загрузки изображения'));
-        }, 30000); // 30 секунд
+        // Функция очистки ресурсов
+        const cleanup = () => {
+            if (timeout) clearTimeout(timeout);
+            if (url) URL.revokeObjectURL(url);
+        };
         
-        img.onload = () => {
-            clearTimeout(timeout);
-            URL.revokeObjectURL(url);
+        // Функция создания canvas из изображения
+        const createCanvasFromImage = (image) => {
             try {
                 // Ограничение размера canvas для Android (максимум 4096x4096 для большинства устройств)
                 const MAX_CANVAS_SIZE = 4096;
-                let width = img.width;
-                let height = img.height;
+                let width = image.width;
+                let height = image.height;
+                
+                // Проверка валидности размеров
+                if (!width || !height || width === 0 || height === 0) {
+                    throw new Error('Неверные размеры изображения');
+                }
                 
                 // Масштабируем если изображение слишком большое
                 if (width > MAX_CANVAS_SIZE || height > MAX_CANVAS_SIZE) {
@@ -226,24 +234,109 @@ function loadImageToCanvas(blob) {
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas);
+                ctx.drawImage(image, 0, 0, width, height);
+                return canvas;
             } catch (error) {
                 console.error('Ошибка создания canvas:', error);
-                reject(new Error(`Ошибка создания canvas: ${error.message}`));
+                throw new Error(`Ошибка создания canvas: ${error.message}`);
             }
         };
         
-        img.onerror = (error) => {
-            clearTimeout(timeout);
-            URL.revokeObjectURL(url);
-            console.error('Ошибка загрузки изображения:', error);
-            reject(new Error('Не удалось загрузить изображение. Возможно, файл поврежден.'));
+        // Таймаут для Android (на случай зависания)
+        timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('Таймаут загрузки изображения (30 сек)'));
+        }, 30000);
+        
+        // Обработка успешной загрузки
+        img.onload = () => {
+            cleanup();
+            try {
+                const canvas = createCanvasFromImage(img);
+                resolve(canvas);
+            } catch (error) {
+                reject(error);
+            }
         };
         
-        // Устанавливаем crossOrigin для предотвращения проблем с CORS
-        img.crossOrigin = 'anonymous';
-        img.src = url;
+        // Обработка ошибки загрузки
+        img.onerror = (error) => {
+            cleanup();
+            console.error('Ошибка загрузки изображения через Image:', error);
+            
+            // Пробуем альтернативный способ через FileReader (более надежно на Android)
+            if (!reader) {
+                reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    const img2 = new Image();
+                    img2.onload = () => {
+                        try {
+                            const canvas = createCanvasFromImage(img2);
+                            resolve(canvas);
+                        } catch (error2) {
+                            reject(new Error(`Ошибка создания canvas: ${error2.message}`));
+                        }
+                    };
+                    
+                    img2.onerror = () => {
+                        reject(new Error('Не удалось загрузить изображение. Файл может быть поврежден или иметь неподдерживаемый формат.'));
+                    };
+                    
+                    // Устанавливаем crossOrigin
+                    img2.crossOrigin = 'anonymous';
+                    img2.src = e.target.result;
+                };
+                
+                reader.onerror = () => {
+                    reject(new Error('Не удалось прочитать файл. Проверьте, что файл не поврежден.'));
+                };
+                
+                // Читаем как Data URL
+                try {
+                    reader.readAsDataURL(blob);
+                } catch (readError) {
+                    reject(new Error(`Ошибка чтения файла: ${readError.message}`));
+                }
+            }
+        };
+        
+        // Пробуем загрузить через URL.createObjectURL
+        try {
+            url = URL.createObjectURL(blob);
+            // Устанавливаем crossOrigin для предотвращения проблем с CORS
+            img.crossOrigin = 'anonymous';
+            img.src = url;
+        } catch (urlError) {
+            // Если createObjectURL не работает, сразу используем FileReader
+            cleanup();
+            reader = new FileReader();
+            
+            reader.onload = (e) => {
+                const img2 = new Image();
+                img2.onload = () => {
+                    try {
+                        const canvas = createCanvasFromImage(img2);
+                        resolve(canvas);
+                    } catch (error2) {
+                        reject(new Error(`Ошибка создания canvas: ${error2.message}`));
+                    }
+                };
+                
+                img2.onerror = () => {
+                    reject(new Error('Не удалось загрузить изображение. Файл может быть поврежден.'));
+                };
+                
+                img2.crossOrigin = 'anonymous';
+                img2.src = e.target.result;
+            };
+            
+            reader.onerror = () => {
+                reject(new Error(`Ошибка чтения файла: ${urlError.message}`));
+            };
+            
+            reader.readAsDataURL(blob);
+        }
     });
 }
 
@@ -335,12 +428,28 @@ async function handleConvert() {
                     }
                 }
 
+                // Проверка что imageBlob валиден
+                if (!imageBlob) {
+                    throw new Error('Не удалось получить данные изображения');
+                }
+                
+                // Проверка размера (для очень больших файлов может быть проблема)
+                if (imageBlob.size && imageBlob.size > 100 * 1024 * 1024) { // 100MB
+                    console.warn(`Большой файл: ${(imageBlob.size / 1024 / 1024).toFixed(2)}MB`);
+                }
+
                 // Загрузка изображения
                 updateStatusItem(statusItem, 'processing', '📥 Загрузка...');
                 let canvas;
                 try {
                     canvas = await loadImageToCanvas(imageBlob);
                 } catch (loadError) {
+                    console.error('Детали ошибки загрузки:', {
+                        fileName: file.name,
+                        fileSize: file.size,
+                        fileType: file.type,
+                        error: loadError
+                    });
                     throw new Error(`Ошибка загрузки: ${loadError.message}`);
                 }
 
