@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Конвертация изображений в PDF">
+    <meta name="theme-color" content="#2196F3">
+    <title>Изображения в PDF</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="icon-192.png">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 Изображения в PDF</h1>
+            <p class="subtitle">Конвертируйте ваши изображения в один PDF файл</p>
+        </header>
+
+        <!-- Информация о поддержке -->
+        <div class="info-box">
+            <details>
+                <summary>ℹ️ Поддержка и инструкция</summary>
+                <div class="info-content">
+                    <p><strong>Поддерживаемые браузеры:</strong> Google Chrome, Microsoft Edge (Windows, Android, iOS, macOS, Linux)</p>
+                    <p><strong>Форматы:</strong> JPEG, PNG, HEIF/HEIC</p>
+                    <p><strong>Как использовать:</strong> Выберите изображения → Настройте сортировку и ориентацию → Нажмите "Конвертировать" → Выберите папку для сохранения</p>
+                </div>
+            </details>
+        </div>
+
+        <main>
+            <!-- Шаг 1: Выбор изображений -->
+            <section class="step" id="step1">
+                <h2>1. Выберите изображения</h2>
+                <div class="file-input-wrapper">
+                    <input type="file" id="imageInput" multiple accept="image/jpeg,image/jpg,image/png,image/heic,image/heif" />
+                    <label for="imageInput" class="file-input-label">
+                        <span class="file-input-text">Выбрать изображения</span>
+                        <span class="file-input-icon">📁</span>
+                    </label>
+                </div>
+                <div id="imagePreview" class="image-preview"></div>
+            </section>
+
+            <!-- Шаг 2: Настройки -->
+            <section class="step" id="step2">
+                <h2>2. Настройки</h2>
+                
+                <div class="setting-group">
+                    <label for="sortOption">Сортировка:</label>
+                    <select id="sortOption">
+                        <option value="date">По дате создания (старые сверху)</option>
+                        <option value="name">По алфавиту (первые сверху)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label for="orientation">Ориентация страницы:</label>
+                    <select id="orientation">
+                        <option value="portrait">Вертикальная (по умолчанию)</option>
+                        <option value="landscape">Горизонтальная</option>
+                    </select>
+                </div>
+            </section>
+
+            <!-- Шаг 3: Конвертация -->
+            <section class="step" id="step3">
+                <h2>3. Конвертация</h2>
+                <button id="convertBtn" class="convert-btn" disabled>Конвертировать в PDF</button>
+                
+                <div id="progressSection" class="progress-section" style="display: none;">
+                    <div class="progress-bar-wrapper">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
+                    <p id="progressText" class="progress-text">Подготовка...</p>
+                    
+                    <div id="imageStatusList" class="image-status-list"></div>
+                </div>
+
+                <div id="errorSection" class="error-section" style="display: none;"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>PWA работает офлайн после первой загрузки</p>
+        </footer>
+    </div>
+
+    <!-- Библиотеки -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" crossorigin="anonymous"></script>
+    <script src="app.js"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => console.log('Service Worker зарегистрирован'))
+                    .catch(err => console.log('Ошибка регистрации Service Worker:', err));
+            });
+        }
+    </script>
+</body>
+</html>
+
