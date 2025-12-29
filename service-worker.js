@@ -1,11 +1,16 @@
-const CACHE_NAME = 'imgtopdf-v1';
+const CACHE_NAME = 'imgtopdf-v2';
 const urlsToCache = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
+
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 // Установка Service Worker
 self.addEventListener('install', (event) => {
