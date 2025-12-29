@@ -1,655 +1,225 @@
-// Глобальные переменные
+/* ================== GLOBAL ================== */
 let imageFiles = [];
 
-// Инициализация
+const isAndroid = /Android/i.test(navigator.userAgent);
+const MAX_CANVAS_SIZE = 4096;
+
+/* ================== INIT ================== */
 document.addEventListener('DOMContentLoaded', () => {
-    const imageInput = document.getElementById('imageInput');
-    const convertBtn = document.getElementById('convertBtn');
-    const imagePreview = document.getElementById('imagePreview');
+    document.getElementById('imageInput').addEventListener('change', e => {
+        addImages(Array.from(e.target.files));
+    });
 
-    // Обработка выбора файлов
-    imageInput.addEventListener('change', handleFileSelect);
-
-    // Обработка конвертации
-    convertBtn.addEventListener('click', handleConvert);
-
-    // Drag and drop
+    document.getElementById('convertBtn').addEventListener('click', handleConvert);
     setupDragAndDrop();
 });
 
-// Обработка выбора файлов
-function handleFileSelect(event) {
-    const files = Array.from(event.target.files);
-    addImages(files);
-}
-
-// Добавление изображений
+/* ================== FILE ADD ================== */
 function addImages(files) {
+    const validExt = ['jpg', 'jpeg', 'png', 'heic', 'heif'];
+
     files.forEach(file => {
-        // Проверка типа файла
-        // На Android file.type может быть пустым, поэтому проверяем расширение в первую очередь
-        const fileName = file.name || '';
-        const fileExtension = fileName.toLowerCase().split('.').pop();
-        const validExtensions = ['jpg', 'jpeg', 'png', 'heic', 'heif'];
-        const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif', 'image/x-png'];
-        
-        // Проверяем расширение файла (более надежно на Android)
-        const isValidExtension = fileExtension && validExtensions.includes(fileExtension);
-        // Проверяем MIME тип (может быть пустым на Android)
-        const fileType = (file.type || '').toLowerCase();
-        const isValidMimeType = fileType && validMimeTypes.includes(fileType);
-        
-        // Файл валиден если есть валидное расширение ИЛИ валидный MIME тип
-        if (!isValidExtension && !isValidMimeType) {
-            showError(`Файл ${file.name} не поддерживается. Поддерживаются: JPEG (.jpg, .jpeg), PNG (.png), HEIF/HEIC (.heic, .heif)`);
+        const ext = (file.name || '').toLowerCase().split('.').pop();
+
+        if (!validExt.includes(ext)) {
+            showError(`Файл ${file.name} не поддерживается`);
             return;
         }
 
-        // Проверка на дубликаты
-        if (imageFiles.some(f => f.name === file.name && f.size === file.size)) {
-            return;
-        }
-
-        // Проверка размера файла (не должен быть пустым)
-        if (!file.size || file.size === 0) {
+        if (!file.size) {
             showError(`Файл ${file.name} пустой`);
             return;
         }
 
+        if (imageFiles.some(f => f.name === file.name && f.size === file.size)) {
+            return;
+        }
+
         imageFiles.push(file);
-        createImagePreview(file);
+        createPreview(file);
     });
 
     updateConvertButton();
 }
 
-// Создание превью изображения
-function createImagePreview(file) {
+/* ================== PREVIEW ================== */
+function createPreview(file) {
     const preview = document.getElementById('imagePreview');
+
     const item = document.createElement('div');
     item.className = 'image-preview-item';
     item.dataset.filename = file.name;
 
     const img = document.createElement('img');
-    const reader = new FileReader();
+    const ext = file.name.toLowerCase();
 
-    // Обработка успешной загрузки
-    reader.onload = (e) => {
-        img.src = e.target.result;
-    };
-
-    // Обработка ошибок (важно для Android)
-    reader.onerror = (e) => {
-        console.error('Ошибка чтения файла:', file.name, e);
-        // Показываем placeholder при ошибке
-        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2ZmYzEwNyIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5FcnJvcjwvdGV4dD48L3N2Zz4=';
-    };
-
-    // Для HEIF/HEIC создаем placeholder (проверяем по расширению, т.к. file.type может быть пустым)
-    const fileNameLower = file.name.toLowerCase();
-    if (fileNameLower.endsWith('.heic') || fileNameLower.endsWith('.heif') ||
-        file.type === 'image/heic' || file.type === 'image/heif') {
-        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2RkZCIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjOTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5IRUlGPC90ZXh0Pjwvc3ZnPg==';
+    if (ext.endsWith('.heic') || ext.endsWith('.heif')) {
+        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2RkZCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5Ij5IRUlDPC90ZXh0Pjwvc3ZnPg==';
     } else {
-        // Читаем файл с обработкой ошибок
-        try {
-            reader.readAsDataURL(file);
-        } catch (error) {
-            console.error('Ошибка при чтении файла:', file.name, error);
-            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2ZmYzEwNyIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5FcnJvcjwvdGV4dD48L3N2Zz4=';
-        }
+        const reader = new FileReader();
+        reader.onload = e => img.src = e.target.result;
+        reader.readAsDataURL(file);
     }
 
     const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-btn';
     removeBtn.textContent = '×';
+    removeBtn.className = 'remove-btn';
     removeBtn.onclick = () => removeImage(file.name);
 
-    const nameLabel = document.createElement('div');
-    nameLabel.className = 'image-name';
-    nameLabel.textContent = file.name;
+    const name = document.createElement('div');
+    name.className = 'image-name';
+    name.textContent = file.name;
 
-    item.appendChild(img);
-    item.appendChild(removeBtn);
-    item.appendChild(nameLabel);
+    item.append(img, removeBtn, name);
     preview.appendChild(item);
 }
 
-// Удаление изображения
-function removeImage(filename) {
-    imageFiles = imageFiles.filter(f => f.name !== filename);
-    const item = document.querySelector(`[data-filename="${filename}"]`);
-    if (item) {
-        item.remove();
-    }
+function removeImage(name) {
+    imageFiles = imageFiles.filter(f => f.name !== name);
+    document.querySelector(`[data-filename="${name}"]`)?.remove();
     updateConvertButton();
 }
 
-// Обновление кнопки конвертации
 function updateConvertButton() {
-    const convertBtn = document.getElementById('convertBtn');
-    convertBtn.disabled = imageFiles.length === 0;
+    document.getElementById('convertBtn').disabled = imageFiles.length === 0;
 }
 
-// Настройка drag and drop
+/* ================== DRAG DROP ================== */
 function setupDragAndDrop() {
-    const container = document.querySelector('.container');
-    
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        container.addEventListener(eventName, preventDefaults, false);
-    });
+    const c = document.querySelector('.container');
+    ['dragenter','dragover','dragleave','drop'].forEach(e =>
+        c.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); })
+    );
+    c.addEventListener('drop', e => addImages(Array.from(e.dataTransfer.files)));
+}
 
-    function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
+/* ================== IMAGE LOADER (ANDROID SAFE) ================== */
+async function loadImageToCanvas(blob) {
+    if (isAndroid && blob.size > 25 * 1024 * 1024) {
+        throw new Error('Слишком большое изображение для Android');
     }
 
-    ['dragenter', 'dragover'].forEach(eventName => {
-        container.addEventListener(eventName, () => {
-            container.style.opacity = '0.7';
-        });
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-        container.addEventListener(eventName, () => {
-            container.style.opacity = '1';
-        });
-    });
-
-    container.addEventListener('drop', (e) => {
-        const files = Array.from(e.dataTransfer.files);
-        addImages(files);
-    });
-}
-
-// Конвертация HEIF/HEIC в JPEG
-async function convertHeicToJpeg(file) {
-    try {
-        if (typeof heic2any === 'undefined') {
-            throw new Error('Библиотека heic2any не загружена');
-        }
-
-        const convertedBlob = await heic2any({
-            blob: file,
-            toType: 'image/jpeg',
-            quality: 0.92
-        });
-
-        // heic2any может вернуть массив или один blob
-        const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-        return blob;
-    } catch (error) {
-        console.error('Ошибка конвертации HEIC:', error);
-        throw new Error(`Не удалось конвертировать ${file.name}: ${error.message}`);
-    }
-}
-
-// Получение даты создания изображения
-async function getImageDate(file) {
-    // Используем lastModified как дату создания
-    // Для более точной даты из EXIF нужна дополнительная библиотека (например, exif-js)
-    return file.lastModified ? new Date(file.lastModified) : new Date();
-}
-
-// Загрузка изображения в canvas
-function loadImageToCanvas(blob) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        let url = null;
-        let timeout = null;
-        let reader = null;
-        
-        // Функция очистки ресурсов
-        const cleanup = () => {
-            if (timeout) clearTimeout(timeout);
-            if (url) URL.revokeObjectURL(url);
-        };
-        
-        // Функция создания canvas из изображения
-        const createCanvasFromImage = (image) => {
-            try {
-                // Ограничение размера canvas для Android (максимум 4096x4096 для большинства устройств)
-                const MAX_CANVAS_SIZE = 4096;
-                let width = image.width;
-                let height = image.height;
-                
-                // Проверка валидности размеров
-                if (!width || !height || width === 0 || height === 0) {
-                    throw new Error('Неверные размеры изображения');
-                }
-                
-                // Масштабируем если изображение слишком большое
-                if (width > MAX_CANVAS_SIZE || height > MAX_CANVAS_SIZE) {
-                    const ratio = Math.min(MAX_CANVAS_SIZE / width, MAX_CANVAS_SIZE / height);
-                    width = Math.floor(width * ratio);
-                    height = Math.floor(height * ratio);
-                }
-                
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                
-                // Улучшаем качество рендеринга
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                
-                ctx.drawImage(image, 0, 0, width, height);
-                return canvas;
-            } catch (error) {
-                console.error('Ошибка создания canvas:', error);
-                throw new Error(`Ошибка создания canvas: ${error.message}`);
-            }
-        };
-        
-        // Таймаут для Android (на случай зависания)
-        timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error('Таймаут загрузки изображения (30 сек)'));
-        }, 30000);
-        
-        // Обработка успешной загрузки
-        img.onload = () => {
-            cleanup();
-            try {
-                const canvas = createCanvasFromImage(img);
-                resolve(canvas);
-            } catch (error) {
-                reject(error);
-            }
-        };
-        
-        // Обработка ошибки загрузки
-        img.onerror = (error) => {
-            cleanup();
-            console.error('Ошибка загрузки изображения через Image:', error);
-            
-            // Пробуем альтернативный способ через FileReader (более надежно на Android)
-            if (!reader) {
-                reader = new FileReader();
-                
-                reader.onload = (e) => {
-                    const img2 = new Image();
-                    img2.onload = () => {
-                        try {
-                            const canvas = createCanvasFromImage(img2);
-                            resolve(canvas);
-                        } catch (error2) {
-                            reject(new Error(`Ошибка создания canvas: ${error2.message}`));
-                        }
-                    };
-                    
-                    img2.onerror = () => {
-                        reject(new Error('Не удалось загрузить изображение. Файл может быть поврежден или иметь неподдерживаемый формат.'));
-                    };
-                    
-                    // Устанавливаем crossOrigin
-                    img2.crossOrigin = 'anonymous';
-                    img2.src = e.target.result;
-                };
-                
-                reader.onerror = () => {
-                    reject(new Error('Не удалось прочитать файл. Проверьте, что файл не поврежден.'));
-                };
-                
-                // Читаем как Data URL
-                try {
-                    reader.readAsDataURL(blob);
-                } catch (readError) {
-                    reject(new Error(`Ошибка чтения файла: ${readError.message}`));
-                }
-            }
-        };
-        
-        // Пробуем загрузить через URL.createObjectURL
+    if ('createImageBitmap' in window) {
         try {
-            url = URL.createObjectURL(blob);
-            // Устанавливаем crossOrigin для предотвращения проблем с CORS
-            img.crossOrigin = 'anonymous';
-            img.src = url;
-        } catch (urlError) {
-            // Если createObjectURL не работает, сразу используем FileReader
-            cleanup();
-            reader = new FileReader();
-            
-            reader.onload = (e) => {
-                const img2 = new Image();
-                img2.onload = () => {
-                    try {
-                        const canvas = createCanvasFromImage(img2);
-                        resolve(canvas);
-                    } catch (error2) {
-                        reject(new Error(`Ошибка создания canvas: ${error2.message}`));
-                    }
-                };
-                
-                img2.onerror = () => {
-                    reject(new Error('Не удалось загрузить изображение. Файл может быть поврежден.'));
-                };
-                
-                img2.crossOrigin = 'anonymous';
-                img2.src = e.target.result;
+            const bitmap = await createImageBitmap(blob);
+
+            let w = bitmap.width;
+            let h = bitmap.height;
+
+            if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) {
+                const r = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h);
+                w = Math.floor(w * r);
+                h = Math.floor(h * r);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bitmap, 0, 0, w, h);
+            bitmap.close();
+
+            return canvas;
+        } catch (_) {}
+    }
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onerror = () => reject(new Error('Ошибка чтения файла'));
+
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                let w = img.naturalWidth;
+                let h = img.naturalHeight;
+
+                if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) {
+                    const r = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h);
+                    w = Math.floor(w * r);
+                    h = Math.floor(h * r);
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(canvas);
             };
-            
-            reader.onerror = () => {
-                reject(new Error(`Ошибка чтения файла: ${urlError.message}`));
-            };
-            
-            reader.readAsDataURL(blob);
-        }
+            img.onerror = () => reject(new Error('Android не смог декодировать изображение'));
+            img.src = reader.result;
+        };
+
+        reader.readAsDataURL(blob);
     });
 }
 
-// Сортировка изображений
-async function sortImages(files) {
-    const sortOption = document.getElementById('sortOption').value;
-    
-    if (sortOption === 'name') {
-        return files.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
-        // Сортировка по дате
-        const filesWithDates = await Promise.all(
-            files.map(async (file) => ({
-                file,
-                date: await getImageDate(file)
-            }))
-        );
-        
-        filesWithDates.sort((a, b) => a.date - b.date);
-        return filesWithDates.map(item => item.file);
+/* ================== HEIC ================== */
+async function convertHeicToJpeg(file) {
+    if (typeof heic2any === 'undefined') {
+        throw new Error('heic2any не подключен');
     }
+    const r = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+    return Array.isArray(r) ? r[0] : r;
 }
 
-// Основная функция конвертации
+/* ================== MAIN ================== */
 async function handleConvert() {
-    const convertBtn = document.getElementById('convertBtn');
-    const progressSection = document.getElementById('progressSection');
-    const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-    const imageStatusList = document.getElementById('imageStatusList');
-    const errorSection = document.getElementById('errorSection');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-    // Сброс UI
-    convertBtn.disabled = true;
-    progressSection.style.display = 'block';
-    errorSection.style.display = 'none';
-    errorSection.innerHTML = '';
-    imageStatusList.innerHTML = '';
-    progressBar.style.width = '0%';
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+    const margin = 1;
 
-    try {
-        // Сортировка изображений
-        progressText.textContent = 'Сортировка изображений...';
-        const sortedFiles = await sortImages([...imageFiles]);
-        
-        // Получение настроек
-        const orientation = document.getElementById('orientation').value;
-        const isPortrait = orientation === 'portrait';
-        
-        // Создание PDF
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({
-            orientation: isPortrait ? 'portrait' : 'landscape',
-            unit: 'mm',
-            format: 'a4'
-        });
+    for (let i = 0; i < imageFiles.length; i++) {
+        let file = imageFiles[i];
+        let blob = file;
 
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        
-        // Минимальные отступы (1mm с каждой стороны для предотвращения обрезки при печати)
-        const margin = 1;
-        const maxWidth = pdfWidth - (margin * 2);
-        const maxHeight = pdfHeight - (margin * 2);
-
-        let processedCount = 0;
-        const totalImages = sortedFiles.length;
-
-        // Обработка каждого изображения
-        for (let i = 0; i < sortedFiles.length; i++) {
-            const file = sortedFiles[i];
-            const statusItem = createStatusItem(file.name, 'processing', '⏳ Обработка...');
-            imageStatusList.appendChild(statusItem);
-
-            try {
-                // Конвертация HEIF/HEIC если нужно
-                // Проверяем по расширению файла (более надежно на Android)
-                let imageBlob = file;
-                const fileNameLower = file.name.toLowerCase();
-                const isHeic = fileNameLower.endsWith('.heic') || fileNameLower.endsWith('.heif') ||
-                               file.type === 'image/heic' || file.type === 'image/heif';
-                
-                if (isHeic) {
-                    updateStatusItem(statusItem, 'processing', '🔄 Конвертация HEIC...');
-                    try {
-                        imageBlob = await convertHeicToJpeg(file);
-                    } catch (heicError) {
-                        throw new Error(`Ошибка конвертации HEIC: ${heicError.message}`);
-                    }
-                }
-
-                // Проверка что imageBlob валиден
-                if (!imageBlob) {
-                    throw new Error('Не удалось получить данные изображения');
-                }
-                
-                // Проверка размера (для очень больших файлов может быть проблема)
-                if (imageBlob.size && imageBlob.size > 100 * 1024 * 1024) { // 100MB
-                    console.warn(`Большой файл: ${(imageBlob.size / 1024 / 1024).toFixed(2)}MB`);
-                }
-
-                // Загрузка изображения
-                updateStatusItem(statusItem, 'processing', '📥 Загрузка...');
-                let canvas;
-                try {
-                    canvas = await loadImageToCanvas(imageBlob);
-                } catch (loadError) {
-                    console.error('Детали ошибки загрузки:', {
-                        fileName: file.name,
-                        fileSize: file.size,
-                        fileType: file.type,
-                        error: loadError
-                    });
-                    throw new Error(`Ошибка загрузки: ${loadError.message}`);
-                }
-
-                // Проверка canvas
-                if (!canvas || canvas.width === 0 || canvas.height === 0) {
-                    throw new Error('Неверный размер canvas');
-                }
-
-                // Расчет размеров для вставки в PDF
-                // Конвертируем пиксели в мм (96 DPI: 1px ≈ 0.264583mm)
-                const pxToMm = 0.264583;
-                let imgWidthMm = canvas.width * pxToMm;
-                let imgHeightMm = canvas.height * pxToMm;
-                
-                // Масштабирование с сохранением пропорций
-                // Используем почти все доступное пространство (99%) для минимизации полей
-                const scaleFactor = 0.99;
-                const targetWidth = maxWidth * scaleFactor;
-                const targetHeight = maxHeight * scaleFactor;
-                
-                // Вычисляем коэффициент масштабирования для вписывания в целевой размер
-                const widthRatio = targetWidth / imgWidthMm;
-                const heightRatio = targetHeight / imgHeightMm;
-                const ratio = Math.min(widthRatio, heightRatio);
-                
-                // Применяем масштабирование
-                imgWidthMm = imgWidthMm * ratio;
-                imgHeightMm = imgHeightMm * ratio;
-                
-                // Центрирование на странице
-                const x = (pdfWidth - imgWidthMm) / 2;
-                const y = (pdfHeight - imgHeightMm) / 2;
-
-                // Добавление новой страницы если нужно (кроме первой)
-                if (i > 0) {
-                    pdf.addPage();
-                }
-
-                // Добавление изображения в PDF
-                updateStatusItem(statusItem, 'processing', '📄 Добавление в PDF...');
-                let imgData;
-                let imageFormat = 'JPEG';
-                
-                try {
-                    // Пробуем JPEG с качеством 0.8 (меньше размер, быстрее на Android)
-                    imgData = canvas.toDataURL('image/jpeg', 0.8);
-                    if (!imgData || imgData === 'data:,' || imgData.length < 100) {
-                        throw new Error('JPEG конвертация не удалась');
-                    }
-                } catch (jpegError) {
-                    console.warn('Ошибка JPEG, пробуем PNG:', jpegError);
-                    // Пробуем PNG как fallback
-                    try {
-                        imgData = canvas.toDataURL('image/png');
-                        imageFormat = 'PNG';
-                        if (!imgData || imgData === 'data:,') {
-                            throw new Error('PNG конвертация не удалась');
-                        }
-                    } catch (pngError) {
-                        console.error('Ошибка PNG:', pngError);
-                        throw new Error(`Ошибка конвертации в DataURL: ${jpegError.message}`);
-                    }
-                }
-
-                if (!imgData || imgData === 'data:,') {
-                    throw new Error('Не удалось получить данные изображения');
-                }
-
-                try {
-                    pdf.addImage(imgData, imageFormat, x, y, imgWidthMm, imgHeightMm, undefined, 'FAST');
-                } catch (pdfError) {
-                    console.error('Ошибка добавления в PDF:', pdfError);
-                    // Пробуем без параметра FAST
-                    try {
-                        pdf.addImage(imgData, imageFormat, x, y, imgWidthMm, imgHeightMm);
-                    } catch (pdfError2) {
-                        throw new Error(`Ошибка добавления в PDF: ${pdfError.message}`);
-                    }
-                }
-
-                processedCount++;
-                updateStatusItem(statusItem, 'success', '✅ Готово');
-                
-                // Обновление прогресса
-                const progress = (processedCount / totalImages) * 100;
-                progressBar.style.width = `${progress}%`;
-                progressText.textContent = `Обработано: ${processedCount} из ${totalImages}`;
-
-            } catch (error) {
-                console.error(`Ошибка обработки ${file.name}:`, error);
-                const errorMsg = error.message || 'Неизвестная ошибка';
-                updateStatusItem(statusItem, 'error', `❌ ${errorMsg}`);
-            }
+        if (file.name.toLowerCase().match(/\.(heic|heif)$/)) {
+            blob = await convertHeicToJpeg(file);
         }
 
-        if (processedCount === 0) {
-            // Собираем информацию об ошибках
-            const errorItems = imageStatusList.querySelectorAll('.image-status-item.error');
-            let errorDetails = '';
-            if (errorItems.length > 0) {
-                const errors = Array.from(errorItems).map(item => {
-                    const text = item.querySelector('.status-text')?.textContent || '';
-                    return text.split(':').pop()?.trim() || '';
-                }).filter(e => e);
-                if (errors.length > 0) {
-                    errorDetails = '\nОшибки:\n' + errors.slice(0, 3).join('\n');
-                    if (errors.length > 3) {
-                        errorDetails += `\n... и еще ${errors.length - 3} ошибок`;
-                    }
-                }
-            }
-            throw new Error(`Не удалось обработать ни одного изображения.${errorDetails}\n\nПроверьте, что файлы являются валидными изображениями (JPEG, PNG, HEIF/HEIC).`);
-        }
+        const canvas = await loadImageToCanvas(blob);
+        const imgData = canvas.toDataURL('image/jpeg', 0.8);
 
-        // Сохранение PDF
-        progressText.textContent = 'Сохранение PDF...';
-        const pdfBlob = pdf.output('blob');
-        const fileName = `images_${new Date().toISOString().split('T')[0]}.pdf`;
-        
-        // Использование File System Access API если доступен, иначе скачивание
-        if ('showSaveFilePicker' in window) {
-            try {
-                const fileHandle = await window.showSaveFilePicker({
-                    suggestedName: fileName,
-                    types: [{
-                        description: 'PDF файлы',
-                        accept: { 'application/pdf': ['.pdf'] }
-                    }]
-                });
-                const writable = await fileHandle.createWritable();
-                await writable.write(pdfBlob);
-                await writable.close();
-                progressText.textContent = `✅ PDF сохранен: ${fileHandle.name}`;
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error('Ошибка сохранения через File System API:', error);
-                    // Fallback на скачивание
-                    downloadPDF(pdfBlob, fileName);
-                    progressText.textContent = `✅ PDF скачан: ${fileName}`;
-                }
-            }
-        } else {
-            // Fallback для браузеров без File System Access API
-            downloadPDF(pdfBlob, fileName);
-            progressText.textContent = `✅ PDF скачан: ${fileName}`;
-        }
+        const pxToMm = 0.264583;
+        let w = canvas.width * pxToMm;
+        let h = canvas.height * pxToMm;
 
-        progressBar.style.width = '100%';
-        convertBtn.disabled = false;
+        const r = Math.min(
+            (pw - margin * 2) / w,
+            (ph - margin * 2) / h
+        );
 
-    } catch (error) {
-        console.error('Ошибка конвертации:', error);
-        errorSection.style.display = 'block';
-        errorSection.textContent = `Ошибка: ${error.message}`;
-        progressText.textContent = 'Ошибка конвертации';
-        convertBtn.disabled = false;
+        w *= r;
+        h *= r;
+
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG',
+            (pw - w) / 2,
+            (ph - h) / 2,
+            w, h
+        );
     }
+
+    downloadPDF(pdf.output('blob'), `images_${Date.now()}.pdf`);
 }
 
-// Скачивание PDF (fallback)
-function downloadPDF(blob, filename) {
-    const url = URL.createObjectURL(blob);
+/* ================== DOWNLOAD ================== */
+function downloadPDF(blob, name) {
     const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
     a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(a.href);
 }
 
-// Создание элемента статуса
-function createStatusItem(filename, status, text) {
-    const item = document.createElement('div');
-    item.className = `image-status-item ${status}`;
-    item.innerHTML = `
-        <span class="status-icon">${text.split(' ')[0]}</span>
-        <span class="status-text">${filename}: ${text.substring(text.indexOf(' ') + 1)}</span>
-    `;
-    return item;
+/* ================== ERROR ================== */
+function showError(msg) {
+    const e = document.getElementById('errorSection');
+    e.textContent = msg;
+    e.style.display = 'block';
+    setTimeout(() => e.style.display = 'none', 5000);
 }
-
-// Обновление элемента статуса
-function updateStatusItem(item, status, text) {
-    item.className = `image-status-item ${status}`;
-    const icon = text.split(' ')[0];
-    const rest = text.substring(text.indexOf(' ') + 1);
-    item.innerHTML = `
-        <span class="status-icon">${icon}</span>
-        <span class="status-text">${item.querySelector('.status-text').textContent.split(':')[0]}: ${rest}</span>
-    `;
-}
-
-// Показ ошибки
-function showError(message) {
-    const errorSection = document.getElementById('errorSection');
-    errorSection.style.display = 'block';
-    errorSection.textContent = message;
-    setTimeout(() => {
-        errorSection.style.display = 'none';
-    }, 5000);
-}
-
