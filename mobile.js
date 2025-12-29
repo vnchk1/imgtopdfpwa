@@ -1,74 +1,118 @@
 /* ================== GLOBAL ================== */
-let imageFiles = [];
+let imageFiles = []; // Массив объектов {blob, name, size, lastModified, type}
 
 const isAndroid = /Android/i.test(navigator.userAgent);
 const MAX_CANVAS_SIZE = 4096;
 
 /* ================== INIT ================== */
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('imageInput').addEventListener('change', e => {
-        addImages(Array.from(e.target.files));
+    const imageInput = document.getElementById('imageInput');
+    
+    // Убеждаемся что accept правильный для галереи и файлового менеджера
+    imageInput.setAttribute('accept', 'image/*');
+    
+    imageInput.addEventListener('change', async e => {
+        const files = Array.from(e.target.files);
+        if (files.length > 0) {
+            await addImages(files);
+            // Очищаем input, чтобы можно было выбрать те же файлы снова
+            e.target.value = '';
+        }
     });
 
     document.getElementById('convertBtn').addEventListener('click', handleConvert);
-    setupDragAndDrop();
 });
 
 /* ================== FILE ADD ================== */
-function addImages(files) {
+async function addImages(files) {
     const validExt = ['jpg', 'jpeg', 'png', 'heic', 'heif'];
 
-    files.forEach(file => {
+    for (const file of files) {
         const ext = (file.name || '').toLowerCase().split('.').pop();
 
         if (!validExt.includes(ext)) {
             showError(`Файл ${file.name} не поддерживается`);
-            return;
+            continue;
         }
 
         if (!file.size) {
             showError(`Файл ${file.name} пустой`);
-            return;
+            continue;
         }
 
+        // Проверка на дубликаты
         if (imageFiles.some(f => f.name === file.name && f.size === file.size)) {
-            return;
+            continue;
         }
 
-        imageFiles.push(file);
-        createPreview(file);
-    });
+        try {
+            // ВАЖНО: Создаем безопасную копию файла как Blob
+            // Это гарантирует, что мы не трогаем оригинальный файл на устройстве
+            const blob = await createSafeFileCopy(file);
+            
+            // Сохраняем метаданные и безопасную копию
+            const fileData = {
+                blob: blob,
+                name: file.name,
+                size: file.size,
+                lastModified: file.lastModified || file.lastModifiedDate?.getTime() || Date.now(),
+                type: file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`
+            };
+
+            imageFiles.push(fileData);
+            createPreview(fileData);
+        } catch (error) {
+            console.error(`Ошибка при создании копии файла ${file.name}:`, error);
+            showError(`Не удалось обработать файл ${file.name}: ${error.message}`);
+        }
+    }
 
     updateConvertButton();
 }
 
+/* ================== SAFE FILE COPY ================== */
+async function createSafeFileCopy(file) {
+    // Создаем безопасную копию файла как Blob
+    // Это гарантирует, что оригинальный файл на устройстве не будет затронут
+    if (file instanceof Blob) {
+        // Если это уже Blob, создаем новый Blob из него
+        return new Blob([file], { type: file.type });
+    }
+    
+    // Для File объектов создаем Blob копию
+    // Используем arrayBuffer для безопасного чтения
+    const arrayBuffer = await file.arrayBuffer();
+    return new Blob([arrayBuffer], { type: file.type });
+}
+
 /* ================== PREVIEW ================== */
-function createPreview(file) {
+function createPreview(fileData) {
     const preview = document.getElementById('imagePreview');
 
     const item = document.createElement('div');
     item.className = 'image-preview-item';
-    item.dataset.filename = file.name;
+    item.dataset.filename = fileData.name;
 
     const img = document.createElement('img');
-    const ext = file.name.toLowerCase();
+    const ext = fileData.name.toLowerCase();
 
     if (ext.endsWith('.heic') || ext.endsWith('.heif')) {
         img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2RkZCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5Ij5IRUlDPC90ZXh0Pjwvc3ZnPg==';
     } else {
+        // Используем безопасную копию Blob для превью
         const reader = new FileReader();
         reader.onload = e => img.src = e.target.result;
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(fileData.blob);
     }
 
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '×';
     removeBtn.className = 'remove-btn';
-    removeBtn.onclick = () => removeImage(file.name);
+    removeBtn.onclick = () => removeImage(fileData.name);
 
     const name = document.createElement('div');
     name.className = 'image-name';
-    name.textContent = file.name;
+    name.textContent = fileData.name;
 
     item.append(img, removeBtn, name);
     preview.appendChild(item);
@@ -82,15 +126,6 @@ function removeImage(name) {
 
 function updateConvertButton() {
     document.getElementById('convertBtn').disabled = imageFiles.length === 0;
-}
-
-/* ================== DRAG DROP ================== */
-function setupDragAndDrop() {
-    const c = document.querySelector('.container');
-    ['dragenter','dragover','dragleave','drop'].forEach(e =>
-        c.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); })
-    );
-    c.addEventListener('drop', e => addImages(Array.from(e.dataTransfer.files)));
 }
 
 /* ================== IMAGE LOADER (ANDROID SAFE) ================== */
@@ -221,8 +256,8 @@ function sortImageFiles(files) {
     
     if (sortOption === 'date') {
         sorted.sort((a, b) => {
-            const dateA = a.lastModified || a.lastModifiedDate?.getTime() || 0;
-            const dateB = b.lastModified || b.lastModifiedDate?.getTime() || 0;
+            const dateA = a.lastModified || 0;
+            const dateB = b.lastModified || 0;
             return dateA - dateB;
         });
     } else if (sortOption === 'name') {
@@ -258,61 +293,62 @@ async function handleConvert() {
         const orientation = document.getElementById('orientation').value;
         const sortedFiles = sortImageFiles(imageFiles);
 
-    const { jsPDF } = window.jspdf;
+        const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ orientation: orientation, unit: 'mm', format: 'a4' });
 
-    const pw = pdf.internal.pageSize.getWidth();
-    const ph = pdf.internal.pageSize.getHeight();
-    const margin = 1;
+        const pw = pdf.internal.pageSize.getWidth();
+        const ph = pdf.internal.pageSize.getHeight();
+        const margin = 1;
 
         const total = sortedFiles.length;
 
         for (let i = 0; i < total; i++) {
-            const file = sortedFiles[i];
+            const fileData = sortedFiles[i];
             const percent = Math.round(((i + 1) / total) * 100);
             
-            updateProgress(percent, `Обработка ${i + 1} из ${total}: ${file.name}`);
-            addImageStatus(file.name, 'processing', 'Обработка...');
+            updateProgress(percent, `Обработка ${i + 1} из ${total}: ${fileData.name}`);
+            addImageStatus(fileData.name, 'processing', 'Обработка...');
 
             try {
-        let blob = file;
+                // Используем безопасную копию Blob из fileData
+                let blob = fileData.blob;
 
                 // Конвертация HEIC/HEIF
-        if (file.name.toLowerCase().match(/\.(heic|heif)$/)) {
-                    addImageStatus(file.name, 'processing', 'Конвертация HEIC...');
-            blob = await convertHeicToJpeg(file);
-        }
+                if (fileData.name.toLowerCase().match(/\.(heic|heif)$/)) {
+                    addImageStatus(fileData.name, 'processing', 'Конвертация HEIC...');
+                    blob = await convertHeicToJpeg(blob);
+                }
 
                 // Загрузка изображения в canvas
-                addImageStatus(file.name, 'processing', 'Загрузка изображения...');
-        const canvas = await loadImageToCanvas(blob);
+                addImageStatus(fileData.name, 'processing', 'Загрузка изображения...');
+                const canvas = await loadImageToCanvas(blob);
                 
-                addImageStatus(file.name, 'processing', 'Добавление в PDF...');
-        const imgData = canvas.toDataURL('image/jpeg', 0.8);
+                addImageStatus(fileData.name, 'processing', 'Добавление в PDF...');
+                const imgData = canvas.toDataURL('image/jpeg', 0.8);
 
-        const pxToMm = 0.264583;
-        let w = canvas.width * pxToMm;
-        let h = canvas.height * pxToMm;
+                const pxToMm = 0.264583;
+                let w = canvas.width * pxToMm;
+                let h = canvas.height * pxToMm;
 
-        const r = Math.min(
-            (pw - margin * 2) / w,
-            (ph - margin * 2) / h
-        );
+                const r = Math.min(
+                    (pw - margin * 2) / w,
+                    (ph - margin * 2) / h
+                );
 
-        w *= r;
-        h *= r;
+                w *= r;
+                h *= r;
 
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG',
-            (pw - w) / 2,
-            (ph - h) / 2,
-            w, h
-        );
+                if (i > 0) pdf.addPage();
+                pdf.addImage(imgData, 'JPEG',
+                    (pw - w) / 2,
+                    (ph - h) / 2,
+                    w, h
+                );
 
-                addImageStatus(file.name, 'success', 'Готово');
+                addImageStatus(fileData.name, 'success', 'Готово');
             } catch (error) {
-                console.error(`Ошибка при обработке ${file.name}:`, error);
-                addImageStatus(file.name, 'error', error.message || 'Ошибка обработки');
+                console.error(`Ошибка при обработке ${fileData.name}:`, error);
+                addImageStatus(fileData.name, 'error', error.message || 'Ошибка обработки');
                 // Продолжаем обработку остальных файлов
             }
         }
@@ -321,8 +357,8 @@ async function handleConvert() {
         
         // Небольшая задержка для отображения финального прогресса
         await new Promise(resolve => setTimeout(resolve, 300));
-
-    downloadPDF(pdf.output('blob'), `images_${Date.now()}.pdf`);
+        
+        downloadPDF(pdf.output('blob'), `images_${Date.now()}.pdf`);
         
         updateProgress(100, 'Готово! PDF файл скачан');
         hideProgress();
@@ -353,3 +389,4 @@ function showError(msg) {
     e.style.display = 'block';
     setTimeout(() => e.style.display = 'none', 5000);
 }
+
