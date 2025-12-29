@@ -164,47 +164,177 @@ async function convertHeicToJpeg(file) {
     return Array.isArray(r) ? r[0] : r;
 }
 
+/* ================== PROGRESS ================== */
+function showProgress() {
+    const progressSection = document.getElementById('progressSection');
+    const imageStatusList = document.getElementById('imageStatusList');
+    progressSection.style.display = 'block';
+    imageStatusList.innerHTML = '';
+    updateProgress(0, 'Подготовка...');
+}
+
+function updateProgress(percent, text) {
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    progressBar.style.width = `${percent}%`;
+    progressBar.textContent = percent > 0 ? `${Math.round(percent)}%` : '';
+    progressText.textContent = text;
+}
+
+function addImageStatus(filename, status, message = '') {
+    const imageStatusList = document.getElementById('imageStatusList');
+    const item = document.createElement('div');
+    item.className = `image-status-item ${status}`;
+    
+    let icon = '⏳';
+    if (status === 'processing') icon = '⏳';
+    else if (status === 'success') icon = '✅';
+    else if (status === 'error') icon = '❌';
+    
+    item.innerHTML = `
+        <span class="status-icon">${icon}</span>
+        <span class="status-text">${filename}${message ? ': ' + message : ''}</span>
+    `;
+    
+    // Удаляем старый статус для этого файла, если есть
+    const existing = Array.from(imageStatusList.children).find(
+        el => el.querySelector('.status-text')?.textContent.startsWith(filename)
+    );
+    if (existing) existing.remove();
+    
+    imageStatusList.appendChild(item);
+    // Прокручиваем к последнему элементу
+    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideProgress() {
+    setTimeout(() => {
+        const progressSection = document.getElementById('progressSection');
+        progressSection.style.display = 'none';
+    }, 2000);
+}
+
+/* ================== SORT ================== */
+function sortImageFiles(files) {
+    const sortOption = document.getElementById('sortOption').value;
+    const sorted = [...files];
+    
+    if (sortOption === 'date') {
+        sorted.sort((a, b) => {
+            const dateA = a.lastModified || a.lastModifiedDate?.getTime() || 0;
+            const dateB = b.lastModified || b.lastModifiedDate?.getTime() || 0;
+            return dateA - dateB;
+        });
+    } else if (sortOption === 'name') {
+        sorted.sort((a, b) => {
+            const nameA = (a.name || '').toLowerCase();
+            const nameB = (b.name || '').toLowerCase();
+            return nameA.localeCompare(nameB, 'ru');
+        });
+    }
+    
+    return sorted;
+}
+
 /* ================== MAIN ================== */
 async function handleConvert() {
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-    const pw = pdf.internal.pageSize.getWidth();
-    const ph = pdf.internal.pageSize.getHeight();
-    const margin = 1;
-
-    for (let i = 0; i < imageFiles.length; i++) {
-        let file = imageFiles[i];
-        let blob = file;
-
-        if (file.name.toLowerCase().match(/\.(heic|heif)$/)) {
-            blob = await convertHeicToJpeg(file);
-        }
-
-        const canvas = await loadImageToCanvas(blob);
-        const imgData = canvas.toDataURL('image/jpeg', 0.8);
-
-        const pxToMm = 0.264583;
-        let w = canvas.width * pxToMm;
-        let h = canvas.height * pxToMm;
-
-        const r = Math.min(
-            (pw - margin * 2) / w,
-            (ph - margin * 2) / h
-        );
-
-        w *= r;
-        h *= r;
-
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG',
-            (pw - w) / 2,
-            (ph - h) / 2,
-            w, h
-        );
+    if (imageFiles.length === 0) {
+        showError('Нет изображений для конвертации');
+        return;
     }
 
-    downloadPDF(pdf.output('blob'), `images_${Date.now()}.pdf`);
+    // Блокируем кнопку во время конвертации
+    const convertBtn = document.getElementById('convertBtn');
+    convertBtn.disabled = true;
+    convertBtn.textContent = 'Конвертация...';
+
+    // Скрываем предыдущие ошибки
+    document.getElementById('errorSection').style.display = 'none';
+
+    try {
+        showProgress();
+
+        // Получаем настройки
+        const orientation = document.getElementById('orientation').value;
+        const sortedFiles = sortImageFiles(imageFiles);
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: orientation, unit: 'mm', format: 'a4' });
+
+        const pw = pdf.internal.pageSize.getWidth();
+        const ph = pdf.internal.pageSize.getHeight();
+        const margin = 1;
+
+        const total = sortedFiles.length;
+
+        for (let i = 0; i < total; i++) {
+            const file = sortedFiles[i];
+            const percent = Math.round(((i + 1) / total) * 100);
+            
+            updateProgress(percent, `Обработка ${i + 1} из ${total}: ${file.name}`);
+            addImageStatus(file.name, 'processing', 'Обработка...');
+
+            try {
+                let blob = file;
+
+                // Конвертация HEIC/HEIF
+                if (file.name.toLowerCase().match(/\.(heic|heif)$/)) {
+                    addImageStatus(file.name, 'processing', 'Конвертация HEIC...');
+                    blob = await convertHeicToJpeg(file);
+                }
+
+                // Загрузка изображения в canvas
+                addImageStatus(file.name, 'processing', 'Загрузка изображения...');
+                const canvas = await loadImageToCanvas(blob);
+                
+                addImageStatus(file.name, 'processing', 'Добавление в PDF...');
+                const imgData = canvas.toDataURL('image/jpeg', 0.8);
+
+                const pxToMm = 0.264583;
+                let w = canvas.width * pxToMm;
+                let h = canvas.height * pxToMm;
+
+                const r = Math.min(
+                    (pw - margin * 2) / w,
+                    (ph - margin * 2) / h
+                );
+
+                w *= r;
+                h *= r;
+
+                if (i > 0) pdf.addPage();
+                pdf.addImage(imgData, 'JPEG',
+                    (pw - w) / 2,
+                    (ph - h) / 2,
+                    w, h
+                );
+
+                addImageStatus(file.name, 'success', 'Готово');
+            } catch (error) {
+                console.error(`Ошибка при обработке ${file.name}:`, error);
+                addImageStatus(file.name, 'error', error.message || 'Ошибка обработки');
+                // Продолжаем обработку остальных файлов
+            }
+        }
+
+        updateProgress(100, 'Создание PDF файла...');
+        
+        // Небольшая задержка для отображения финального прогресса
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        downloadPDF(pdf.output('blob'), `images_${Date.now()}.pdf`);
+        
+        updateProgress(100, 'Готово! PDF файл скачан');
+        hideProgress();
+
+    } catch (error) {
+        console.error('Критическая ошибка:', error);
+        showError(`Ошибка конвертации: ${error.message || 'Неизвестная ошибка'}`);
+        updateProgress(0, 'Ошибка');
+    } finally {
+        convertBtn.disabled = false;
+        convertBtn.textContent = 'Конвертировать в PDF';
+    }
 }
 
 /* ================== DOWNLOAD ================== */
