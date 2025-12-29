@@ -27,13 +27,19 @@ function handleFileSelect(event) {
 function addImages(files) {
     files.forEach(file => {
         // Проверка типа файла
-        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif'];
+        // На Android file.type может быть пустым, поэтому проверяем расширение в первую очередь
         const fileExtension = file.name.toLowerCase().split('.').pop();
-        const isValidType = validTypes.includes(file.type) || 
-                           ['heic', 'heif'].includes(fileExtension);
-
-        if (!isValidType) {
-            showError(`Файл ${file.name} не поддерживается`);
+        const validExtensions = ['jpg', 'jpeg', 'png', 'heic', 'heif'];
+        const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif'];
+        
+        // Проверяем расширение файла (более надежно на Android)
+        const isValidExtension = validExtensions.includes(fileExtension);
+        // Проверяем MIME тип (может быть пустым на Android)
+        const isValidMimeType = file.type && validMimeTypes.includes(file.type.toLowerCase());
+        
+        // Файл валиден если есть валидное расширение ИЛИ валидный MIME тип
+        if (!isValidExtension && !isValidMimeType) {
+            showError(`Файл ${file.name} не поддерживается. Поддерживаются: JPEG, PNG, HEIF/HEIC`);
             return;
         }
 
@@ -59,16 +65,31 @@ function createImagePreview(file) {
     const img = document.createElement('img');
     const reader = new FileReader();
 
+    // Обработка успешной загрузки
     reader.onload = (e) => {
         img.src = e.target.result;
     };
 
-    // Для HEIF/HEIC создаем placeholder
-    if (file.type === 'image/heic' || file.type === 'image/heif' || 
-        file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+    // Обработка ошибок (важно для Android)
+    reader.onerror = (e) => {
+        console.error('Ошибка чтения файла:', file.name, e);
+        // Показываем placeholder при ошибке
+        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2ZmYzEwNyIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5FcnJvcjwvdGV4dD48L3N2Zz4=';
+    };
+
+    // Для HEIF/HEIC создаем placeholder (проверяем по расширению, т.к. file.type может быть пустым)
+    const fileNameLower = file.name.toLowerCase();
+    if (fileNameLower.endsWith('.heic') || fileNameLower.endsWith('.heif') ||
+        file.type === 'image/heic' || file.type === 'image/heif') {
         img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2RkZCIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjOTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5IRUlGPC90ZXh0Pjwvc3ZnPg==';
     } else {
-        reader.readAsDataURL(file);
+        // Читаем файл с обработкой ошибок
+        try {
+            reader.readAsDataURL(file);
+        } catch (error) {
+            console.error('Ошибка при чтении файла:', file.name, error);
+            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2ZmYzEwNyIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5FcnJvcjwvdGV4dD48L3N2Zz4=';
+        }
     }
 
     const removeBtn = document.createElement('button');
@@ -168,21 +189,35 @@ function loadImageToCanvas(blob) {
         const img = new Image();
         const url = URL.createObjectURL(blob);
         
+        // Таймаут для Android (на случай зависания)
+        const timeout = setTimeout(() => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Таймаут загрузки изображения'));
+        }, 30000); // 30 секунд
+        
         img.onload = () => {
+            clearTimeout(timeout);
             URL.revokeObjectURL(url);
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            resolve(canvas);
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                resolve(canvas);
+            } catch (error) {
+                reject(new Error(`Ошибка создания canvas: ${error.message}`));
+            }
         };
         
-        img.onerror = () => {
+        img.onerror = (error) => {
+            clearTimeout(timeout);
             URL.revokeObjectURL(url);
-            reject(new Error('Не удалось загрузить изображение'));
+            reject(new Error('Не удалось загрузить изображение. Возможно, файл поврежден.'));
         };
         
+        // Устанавливаем crossOrigin для предотвращения проблем с CORS
+        img.crossOrigin = 'anonymous';
         img.src = url;
     });
 }
@@ -260,9 +295,13 @@ async function handleConvert() {
 
             try {
                 // Конвертация HEIF/HEIC если нужно
+                // Проверяем по расширению файла (более надежно на Android)
                 let imageBlob = file;
-                if (file.type === 'image/heic' || file.type === 'image/heif' ||
-                    file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+                const fileNameLower = file.name.toLowerCase();
+                const isHeic = fileNameLower.endsWith('.heic') || fileNameLower.endsWith('.heif') ||
+                               file.type === 'image/heic' || file.type === 'image/heif';
+                
+                if (isHeic) {
                     updateStatusItem(statusItem, 'processing', '🔄 Конвертация HEIC...');
                     imageBlob = await convertHeicToJpeg(file);
                 }
