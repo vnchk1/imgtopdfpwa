@@ -48,6 +48,12 @@ function addImages(files) {
             return;
         }
 
+        // Проверка размера файла (не должен быть пустым)
+        if (!file.size || file.size === 0) {
+            showError(`Файл ${file.name} пустой`);
+            return;
+        }
+
         imageFiles.push(file);
         createImagePreview(file);
     });
@@ -199,13 +205,31 @@ function loadImageToCanvas(blob) {
             clearTimeout(timeout);
             URL.revokeObjectURL(url);
             try {
+                // Ограничение размера canvas для Android (максимум 4096x4096 для большинства устройств)
+                const MAX_CANVAS_SIZE = 4096;
+                let width = img.width;
+                let height = img.height;
+                
+                // Масштабируем если изображение слишком большое
+                if (width > MAX_CANVAS_SIZE || height > MAX_CANVAS_SIZE) {
+                    const ratio = Math.min(MAX_CANVAS_SIZE / width, MAX_CANVAS_SIZE / height);
+                    width = Math.floor(width * ratio);
+                    height = Math.floor(height * ratio);
+                }
+                
                 const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
+                canvas.width = width;
+                canvas.height = height;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
+                
+                // Улучшаем качество рендеринга
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
+                ctx.drawImage(img, 0, 0, width, height);
                 resolve(canvas);
             } catch (error) {
+                console.error('Ошибка создания canvas:', error);
                 reject(new Error(`Ошибка создания canvas: ${error.message}`));
             }
         };
@@ -213,6 +237,7 @@ function loadImageToCanvas(blob) {
         img.onerror = (error) => {
             clearTimeout(timeout);
             URL.revokeObjectURL(url);
+            console.error('Ошибка загрузки изображения:', error);
             reject(new Error('Не удалось загрузить изображение. Возможно, файл поврежден.'));
         };
         
@@ -303,12 +328,26 @@ async function handleConvert() {
                 
                 if (isHeic) {
                     updateStatusItem(statusItem, 'processing', '🔄 Конвертация HEIC...');
-                    imageBlob = await convertHeicToJpeg(file);
+                    try {
+                        imageBlob = await convertHeicToJpeg(file);
+                    } catch (heicError) {
+                        throw new Error(`Ошибка конвертации HEIC: ${heicError.message}`);
+                    }
                 }
 
                 // Загрузка изображения
                 updateStatusItem(statusItem, 'processing', '📥 Загрузка...');
-                const canvas = await loadImageToCanvas(imageBlob);
+                let canvas;
+                try {
+                    canvas = await loadImageToCanvas(imageBlob);
+                } catch (loadError) {
+                    throw new Error(`Ошибка загрузки: ${loadError.message}`);
+                }
+
+                // Проверка canvas
+                if (!canvas || canvas.width === 0 || canvas.height === 0) {
+                    throw new Error('Неверный размер canvas');
+                }
 
                 // Расчет размеров для вставки в PDF
                 // Конвертируем пиксели в мм (96 DPI: 1px ≈ 0.264583mm)
@@ -341,8 +380,46 @@ async function handleConvert() {
                 }
 
                 // Добавление изображения в PDF
-                const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                pdf.addImage(imgData, 'JPEG', x, y, imgWidthMm, imgHeightMm, undefined, 'FAST');
+                updateStatusItem(statusItem, 'processing', '📄 Добавление в PDF...');
+                let imgData;
+                let imageFormat = 'JPEG';
+                
+                try {
+                    // Пробуем JPEG с качеством 0.8 (меньше размер, быстрее на Android)
+                    imgData = canvas.toDataURL('image/jpeg', 0.8);
+                    if (!imgData || imgData === 'data:,' || imgData.length < 100) {
+                        throw new Error('JPEG конвертация не удалась');
+                    }
+                } catch (jpegError) {
+                    console.warn('Ошибка JPEG, пробуем PNG:', jpegError);
+                    // Пробуем PNG как fallback
+                    try {
+                        imgData = canvas.toDataURL('image/png');
+                        imageFormat = 'PNG';
+                        if (!imgData || imgData === 'data:,') {
+                            throw new Error('PNG конвертация не удалась');
+                        }
+                    } catch (pngError) {
+                        console.error('Ошибка PNG:', pngError);
+                        throw new Error(`Ошибка конвертации в DataURL: ${jpegError.message}`);
+                    }
+                }
+
+                if (!imgData || imgData === 'data:,') {
+                    throw new Error('Не удалось получить данные изображения');
+                }
+
+                try {
+                    pdf.addImage(imgData, imageFormat, x, y, imgWidthMm, imgHeightMm, undefined, 'FAST');
+                } catch (pdfError) {
+                    console.error('Ошибка добавления в PDF:', pdfError);
+                    // Пробуем без параметра FAST
+                    try {
+                        pdf.addImage(imgData, imageFormat, x, y, imgWidthMm, imgHeightMm);
+                    } catch (pdfError2) {
+                        throw new Error(`Ошибка добавления в PDF: ${pdfError.message}`);
+                    }
+                }
 
                 processedCount++;
                 updateStatusItem(statusItem, 'success', '✅ Готово');
@@ -354,12 +431,28 @@ async function handleConvert() {
 
             } catch (error) {
                 console.error(`Ошибка обработки ${file.name}:`, error);
-                updateStatusItem(statusItem, 'error', `❌ Ошибка: ${error.message}`);
+                const errorMsg = error.message || 'Неизвестная ошибка';
+                updateStatusItem(statusItem, 'error', `❌ ${errorMsg}`);
             }
         }
 
         if (processedCount === 0) {
-            throw new Error('Не удалось обработать ни одного изображения');
+            // Собираем информацию об ошибках
+            const errorItems = imageStatusList.querySelectorAll('.image-status-item.error');
+            let errorDetails = '';
+            if (errorItems.length > 0) {
+                const errors = Array.from(errorItems).map(item => {
+                    const text = item.querySelector('.status-text')?.textContent || '';
+                    return text.split(':').pop()?.trim() || '';
+                }).filter(e => e);
+                if (errors.length > 0) {
+                    errorDetails = '\nОшибки:\n' + errors.slice(0, 3).join('\n');
+                    if (errors.length > 3) {
+                        errorDetails += `\n... и еще ${errors.length - 3} ошибок`;
+                    }
+                }
+            }
+            throw new Error(`Не удалось обработать ни одного изображения.${errorDetails}\n\nПроверьте, что файлы являются валидными изображениями (JPEG, PNG, HEIF/HEIC).`);
         }
 
         // Сохранение PDF
