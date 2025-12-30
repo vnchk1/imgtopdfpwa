@@ -362,3 +362,14 @@ footer {
     }
 }
 
+/* Android предупреждения */
+.android-warning {
+    display: block;           /* Всегда видно */
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    color: #856404;
+    padding: 10px 15px;
+    margin-top: 10px;
+    border-radius: 6px;
+    font-size: 0.95em;
+}
