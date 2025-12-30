@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Связаться с нами</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Связаться с автором</h1>
+            <p class="subtitle">Оставьте отзыв или предложение</p>
+        </header>
+
+        <main>
+            <form name="contact" method="POST" data-netlify="true" data-netlify-honeypot="bot-field" action="/thank-you.html">
+                <!-- Скрытое поле для Netlify -->
+                <input type="hidden" name="form-name" value="contact">
+
+                <!-- Honeypot -->
+                <p style="display:none">
+                    <label>Не заполняйте это поле: <input name="bot-field"></label>
+                </p>
+
+                <div class="form-group">
+                    <label>Имя:
+                        <input type="text" name="name" required>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>Email:
+                        <input type="email" name="email" required>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>Сообщение:
+                        <textarea name="message" rows="5" required></textarea>
+                    </label>
+                </div>
+
+                <button type="submit" class="convert-btn">Отправить</button>
+            </form>
+        </main>
+
+        <footer>
+            <p>PWA работает офлайн после первой загрузки</p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -59,40 +59,18 @@ header h1 {
     background: #e3f2fd;
     border-left: 4px solid var(--primary-color);
     border-radius: 6px;
-    padding: 0;
+    padding: 15px 20px;
 }
 
-.info-box details {
-    cursor: pointer;
-}
-
-.info-box summary {
-    padding: 12px 15px;
-    font-weight: 500;
+.info-box h2 {
+    font-size: 1.2em;
     color: var(--primary-color);
-    list-style: none;
-    user-select: none;
-}
-
-.info-box summary::-webkit-details-marker {
-    display: none;
-}
-
-.info-box summary::before {
-    content: '▶';
-    display: inline-block;
-    margin-right: 8px;
-    transition: transform 0.2s;
-}
-
-.info-box details[open] summary::before {
-    transform: rotate(90deg);
+    margin-bottom: 10px;
 }
 
 .info-content {
-    padding: 0 15px 15px 15px;
-    font-size: 0.9em;
-    line-height: 1.8;
+    font-size: 0.95em;
+    line-height: 1.6;
     color: #555;
 }
 
@@ -104,6 +82,20 @@ header h1 {
     margin-bottom: 0;
 }
 
+/* Android предупреждение */
+.android-warning {
+    display: block;           /* всегда видно */
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    color: #856404;
+    padding: 10px 15px;
+    margin-top: 10px;
+    border-radius: 6px;
+    font-size: 1em;
+    font-weight: 500;
+}
+
+/* Steps */
 .step {
     margin-bottom: 30px;
     padding: 20px;
@@ -362,14 +354,92 @@ footer {
     }
 }
 
-/* Android предупреждения */
-.android-warning {
-    display: block;           /* Всегда видно */
-    background: #fff3cd;
-    border-left: 4px solid #ffc107;
-    color: #856404;
-    padding: 10px 15px;
+
+/* ================== Contact Form ================== */
+form {
+    background: var(--card-bg);
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    max-width: 600px;
+    margin: 0 auto 40px auto;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--text-color);
+}
+
+form input[type="text"],
+form input[type="email"],
+form textarea {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1em;
+    font-family: inherit;
+    transition: border-color 0.3s;
+    background: white;
+}
+
+form input[type="text"]:focus,
+form input[type="email"]:focus,
+form textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+form textarea {
+    resize: vertical;
+}
+
+form button {
+    width: 100%;
+    padding: 15px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+form button:hover {
+    background: var(--primary-dark);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 600px) {
+    form {
+        padding: 20px;
+    }
+}
+
+
+
+/* Ссылка на форму обратной связи */
+.feedback-link {
     margin-top: 10px;
-    border-radius: 6px;
-    font-size: 0.95em;
+    font-size: 1em;
+}
+
+.feedback-anchor {
+    color: #1565C0;
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 0.3s;
+}
+
+.feedback-anchor:hover {
+    color: #0D47A1;
+    text-decoration: underline;
 }

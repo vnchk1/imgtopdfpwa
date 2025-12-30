@@ -1,4 +1,4 @@
-const CACHE_NAME = 'imgtopdf-v7';
+const CACHE_NAME = 'imgtopdf-v8';
 const urlsToCache = [
   '/',
   '/index.html',
