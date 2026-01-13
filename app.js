@@ -1,5 +1,7 @@
 /* ================== GLOBAL ================== */
-let imageFiles = [];
+let imageFiles = []; // Массив объектов {file, rotation, id}
+let imageCounter = 0;
+let customOrder = null; // null - использовать сортировку, массив - использовать кастомный порядок
 
 const isAndroid = /Android/i.test(navigator.userAgent);
 const MAX_CANVAS_SIZE = 4096;
@@ -10,6 +12,15 @@ document.addEventListener('DOMContentLoaded', () => {
     imageInput.addEventListener('change', e => addImages(Array.from(e.target.files)));
 
     document.getElementById('convertBtn').addEventListener('click', handleConvert);
+    
+    const sortOption = document.getElementById('sortOption');
+    if (sortOption) {
+        sortOption.addEventListener('change', () => {
+            customOrder = null; // Сбрасываем кастомный порядок при изменении сортировки
+            applySort();
+        });
+    }
+    
     setupDragAndDrop();
 });
 
@@ -30,53 +41,168 @@ function addImages(files) {
             return;
         }
 
-        if (imageFiles.some(f => f.name === file.name && f.size === file.size)) {
+        if (imageFiles.some(f => f.file.name === file.name && f.file.size === file.size)) {
             return;
         }
 
-        imageFiles.push(file);
-        createPreview(file);
+        const imageData = {
+            file: file,
+            rotation: 0,
+            id: imageCounter++
+        };
+
+        imageFiles.push(imageData);
+        createPreview(imageData);
     });
 
     updateConvertButton();
 }
 
 /* ================== PREVIEW ================== */
-function createPreview(file) {
+function createPreview(imageData) {
     const preview = document.getElementById('imagePreview');
 
     const item = document.createElement('div');
     item.className = 'image-preview-item';
-    item.dataset.filename = file.name;
+    item.dataset.imageId = imageData.id;
+    item.draggable = true;
 
     const img = document.createElement('img');
-    const ext = file.name.toLowerCase();
+    img.draggable = false; // Предотвращаем скачивание файла при перетаскивании
+    const ext = imageData.file.name.toLowerCase();
 
     if (ext.endsWith('.heic') || ext.endsWith('.heif')) {
         img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2RkZCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5Ij5IRUlDPC90ZXh0Pjwvc3ZnPg==';
     } else {
         const reader = new FileReader();
-        reader.onload = e => img.src = e.target.result;
-        reader.readAsDataURL(file);
+        reader.onload = e => {
+            img.src = e.target.result;
+            applyRotation(img, imageData.rotation);
+        };
+        reader.readAsDataURL(imageData.file);
     }
 
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '×';
     removeBtn.className = 'remove-btn';
-    removeBtn.onclick = () => removeImage(file.name);
+    removeBtn.draggable = false; // Предотвращаем перетаскивание при клике на кнопку
+    removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        removeImage(imageData.id);
+    };
+
+    const rotateBtn = document.createElement('button');
+    rotateBtn.innerHTML = '↻';
+    rotateBtn.className = 'rotate-btn';
+    rotateBtn.draggable = false; // Предотвращаем перетаскивание при клике на кнопку
+    rotateBtn.onclick = (e) => {
+        e.stopPropagation();
+        rotateImage(imageData.id);
+    };
 
     const name = document.createElement('div');
     name.className = 'image-name';
-    name.textContent = file.name;
+    name.textContent = imageData.file.name;
 
-    item.append(img, removeBtn, name);
+    item.append(img, removeBtn, rotateBtn, name);
+    
+    // Drag and drop для изменения порядка
+    item.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', imageData.id.toString());
+        e.dataTransfer.setData('application/json', JSON.stringify({ id: imageData.id }));
+        item.classList.add('dragging');
+    });
+    
+    item.addEventListener('dragend', (e) => {
+        e.preventDefault();
+        item.classList.remove('dragging');
+        document.querySelectorAll('.image-preview-item').forEach(el => el.classList.remove('drag-over'));
+    });
+    
+    item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.effectAllowed === 'move') {
+            e.dataTransfer.dropEffect = 'move';
+            item.classList.add('drag-over');
+        }
+    });
+    
+    item.addEventListener('dragleave', () => {
+        item.classList.remove('drag-over');
+    });
+    
+    item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        item.classList.remove('drag-over');
+        const sourceId = parseInt(e.dataTransfer.getData('text/plain'));
+        if (!isNaN(sourceId) && sourceId !== imageData.id) {
+            moveImage(sourceId, imageData.id);
+        }
+    });
+
     preview.appendChild(item);
 }
 
-function removeImage(name) {
-    imageFiles = imageFiles.filter(f => f.name !== name);
-    document.querySelector(`[data-filename="${name}"]`)?.remove();
+function applyRotation(img, rotation) {
+    if (rotation) {
+        img.style.transform = `rotate(${rotation}deg)`;
+    } else {
+        img.style.transform = '';
+    }
+}
+
+function removeImage(id) {
+    imageFiles = imageFiles.filter(f => f.id !== id);
+    document.querySelector(`[data-image-id="${id}"]`)?.remove();
+    customOrder = null;
     updateConvertButton();
+}
+
+function rotateImage(id) {
+    const imageData = imageFiles.find(f => f.id === id);
+    if (imageData) {
+        imageData.rotation = (imageData.rotation + 90) % 360;
+        const item = document.querySelector(`[data-image-id="${id}"]`);
+        const img = item?.querySelector('img');
+        if (img) {
+            applyRotation(img, imageData.rotation);
+        }
+    }
+}
+
+function moveImage(sourceId, targetId) {
+    const sourceIndex = imageFiles.findIndex(f => f.id === sourceId);
+    const targetIndex = imageFiles.findIndex(f => f.id === targetId);
+    
+    if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return;
+    
+    // Удаляем элемент из старого места
+    const [moved] = imageFiles.splice(sourceIndex, 1);
+    
+    // Вычисляем новый индекс с учетом того что элемент уже удален
+    let newIndex = targetIndex;
+    if (sourceIndex < targetIndex) {
+        newIndex = targetIndex - 1;
+    }
+    
+    // Вставляем элемент перед целевым
+    imageFiles.splice(newIndex, 0, moved);
+    
+    // Устанавливаем кастомный порядок
+    customOrder = imageFiles.map(f => f.id);
+    
+    // Переставляем элементы в DOM
+    const preview = document.getElementById('imagePreview');
+    const sourceElement = document.querySelector(`[data-image-id="${sourceId}"]`);
+    const targetElement = document.querySelector(`[data-image-id="${targetId}"]`);
+    
+    if (sourceElement && targetElement) {
+        preview.insertBefore(sourceElement, targetElement);
+    }
 }
 
 function updateConvertButton() {
@@ -160,6 +286,26 @@ async function convertHeicToJpeg(file) {
     return Array.isArray(r) ? r[0] : r;
 }
 
+/* ================== ROTATE ================== */
+function rotateCanvas(canvas, rotation) {
+    const rotatedCanvas = document.createElement('canvas');
+    const ctx = rotatedCanvas.getContext('2d');
+    
+    if (rotation === 90 || rotation === 270) {
+        rotatedCanvas.width = canvas.height;
+        rotatedCanvas.height = canvas.width;
+    } else {
+        rotatedCanvas.width = canvas.width;
+        rotatedCanvas.height = canvas.height;
+    }
+    
+    ctx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    
+    return rotatedCanvas;
+}
+
 /* ================== PROGRESS ================== */
 function showProgress() {
     const progressSection = document.getElementById('progressSection');
@@ -209,25 +355,40 @@ function hideProgress() {
 }
 
 /* ================== SORT ================== */
-function sortImageFiles(files) {
+function applySort() {
     const sortOption = document.getElementById('sortOption').value;
-    const sorted = [...files];
+    const sorted = [...imageFiles];
 
     if (sortOption === 'date') {
         sorted.sort((a, b) => {
-            const dateA = a.lastModified || a.lastModifiedDate?.getTime() || 0;
-            const dateB = b.lastModified || b.lastModifiedDate?.getTime() || 0;
+            const dateA = a.file.lastModified || a.file.lastModifiedDate?.getTime() || 0;
+            const dateB = b.file.lastModified || b.file.lastModifiedDate?.getTime() || 0;
             return dateA - dateB;
         });
     } else if (sortOption === 'name') {
         sorted.sort((a, b) => {
-            const nameA = (a.name || '').toLowerCase();
-            const nameB = (b.name || '').toLowerCase();
+            const nameA = (a.file.name || '').toLowerCase();
+            const nameB = (b.file.name || '').toLowerCase();
             return nameA.localeCompare(nameB, 'ru');
         });
     }
 
-    return sorted;
+    imageFiles = sorted;
+    
+    // Перерисовываем превью
+    const preview = document.getElementById('imagePreview');
+    preview.innerHTML = '';
+    imageFiles.forEach(imageData => createPreview(imageData));
+}
+
+function sortImageFiles(files) {
+    // Если есть кастомный порядок, используем его
+    if (customOrder !== null && customOrder.length === files.length) {
+        return customOrder.map(id => files.find(f => f.id === id)).filter(Boolean);
+    }
+    
+    // Иначе используем текущий порядок файлов
+    return files;
 }
 
 /* ================== MAIN ================== */
@@ -256,24 +417,29 @@ async function handleConvert() {
         const total = sortedFiles.length;
 
         for (let i = 0; i < total; i++) {
-            const file = sortedFiles[i];
+            const imageData = sortedFiles[i];
             const percent = Math.round(((i + 1) / total) * 100);
 
-            updateProgress(percent, `Обработка ${i + 1} из ${total}: ${file.name}`);
-            addImageStatus(file.name, 'processing', 'Обработка...');
+            updateProgress(percent, `Обработка ${i + 1} из ${total}: ${imageData.file.name}`);
+            addImageStatus(imageData.file.name, 'processing', 'Обработка...');
 
             try {
-                let blob = file;
+                let blob = imageData.file;
 
-                if (file.name.toLowerCase().match(/\.(heic|heif)$/)) {
-                    addImageStatus(file.name, 'processing', 'Конвертация HEIC...');
-                    blob = await convertHeicToJpeg(file);
+                if (imageData.file.name.toLowerCase().match(/\.(heic|heif)$/)) {
+                    addImageStatus(imageData.file.name, 'processing', 'Конвертация HEIC...');
+                    blob = await convertHeicToJpeg(imageData.file);
                 }
 
-                addImageStatus(file.name, 'processing', 'Загрузка изображения...');
-                const canvas = await loadImageToCanvas(blob);
+                addImageStatus(imageData.file.name, 'processing', 'Загрузка изображения...');
+                let canvas = await loadImageToCanvas(blob);
 
-                addImageStatus(file.name, 'processing', 'Добавление в PDF...');
+                // Применяем поворот если нужно
+                if (imageData.rotation) {
+                    canvas = rotateCanvas(canvas, imageData.rotation);
+                }
+
+                addImageStatus(imageData.file.name, 'processing', 'Добавление в PDF...');
                 const imgData = canvas.toDataURL('image/jpeg', 0.8);
 
                 const pxToMm = 0.264583;
@@ -286,9 +452,9 @@ async function handleConvert() {
                 if (i > 0) pdf.addPage();
                 pdf.addImage(imgData, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h);
 
-                addImageStatus(file.name, 'success', 'Готово');
+                addImageStatus(imageData.file.name, 'success', 'Готово');
             } catch (error) {
-                addImageStatus(file.name, 'error', error.message || 'Ошибка обработки');
+                addImageStatus(imageData.file.name, 'error', error.message || 'Ошибка обработки');
             }
         }
 

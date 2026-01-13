@@ -159,6 +159,7 @@ header h1 {
     overflow: hidden;
     box-shadow: var(--shadow);
     aspect-ratio: 1;
+    cursor: move;
 }
 
 .image-preview-item img {
@@ -182,6 +183,49 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
+    z-index: 2;
+    transition: transform 0.2s;
+}
+
+.image-preview-item .remove-btn:hover {
+    transform: scale(1.1);
+}
+
+.image-preview-item .rotate-btn {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    transition: transform 0.2s;
+    line-height: 1;
+}
+
+.image-preview-item .rotate-btn:hover {
+    transform: scale(1.1) rotate(90deg);
+}
+
+.image-preview-item.dragging {
+    opacity: 0.5;
+}
+
+.image-preview-item.drag-over {
+    border: 2px solid var(--primary-color);
+    border-radius: 8px;
+}
+
+.image-preview-item img {
+    transition: transform 0.3s;
 }
 
 .image-preview-item .image-name {
